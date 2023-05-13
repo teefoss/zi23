@@ -1,0 +1,145 @@
+.origin 100
+
+.dw abc         0x1007
+.dw myvar       5
+.db string      "The quick brown fox jumps over the lazy dog.", 10, 0
+.dw vbuf        0x8000
+.dw test        5
+
+.start
+.procedure main
+        load    z, 1
+        int     0
+        call    key_test
+        return
+
+.procedure key_test
+        load c, 1
+key_start:
+        int     23
+        move    x, z
+        int     9
+        jump    key_start
+        return
+
+.procedure add_test
+        load    a, 0
+        load    b, 7
+        add     a, [myvar]
+        return
+
+.procedure test_read_keyb
+        load    z, 'A'
+        load    c, 1
+keyb_loop:
+        int     9
+        int     23              ; wait for key
+        comp    z, 'q'
+        jne      keyb_loop
+        int     25              ; power off
+
+.procedure char_test
+        load    z, '!'
+        load    c, 1
+        int     9
+
+.procedure pixel_test
+        load    z, 13
+        load    x, 10
+        load    y, 10
+        int     21
+        load    z, 2
+        load    x, 12
+        load    y, 12
+        int     21
+
+        load    x, 10
+        load    y, 10
+        int 22
+        
+        return
+
+.procedure scroll_test
+        load    z, 3            ; scroll n lines
+        load    x, 0x84         ; attr: blue bg
+        int     16              ; scroll
+        return
+
+.procedure string_test
+        lea     z, string
+        load    c, 10
+string_loop:
+        int     10
+        loop    string_loop
+        return
+
+.procedure fill_screen
+        load    z, 1            ; 80 col mode
+        int     0               ; set mode
+
+        ; set color
+        load    z, 9
+        int     14              ; background
+        int     15              ; border
+
+        load    x, 1999         ; num chars to write
+        load    z, 0            ; char
+        load    c, 1
+fill_loop:
+        int     9               ; write char
+        inc     z
+        and     z, 0xFF
+        dec     x
+        jnz     fill_loop
+        return
+;
+; STORE op testing
+;
+.procedure  test_store
+            load    a, 15
+            store   a, [20]         ; store at address 20
+            store   a, test         ; store in test
+            store   a, [test]       ; store at address in test
+
+            return
+;
+; LOAD op testing
+;
+.procedure  test_load
+            load    a, 0xFF
+            load    y, test
+            load    x, [0x8]
+            load    a, [test]
+            return
+;
+; loop until user presses escape key
+;
+.procedure  wait_for_escape
+            push    a
+key_loop:   int     7               ; get key state
+            and     a, 1           ; clear all but escape key flag
+            jz      key_loop
+            pop     a
+            return
+;
+; print ASCII chars 0-255 in all colors
+; Destroyed: A, X, Y
+;
+.procedure  print_chars
+            load    x, 0            ; char, start at ASCII 0
+            load    y, 0            ; color
+            load    c, 1
+print_loop:
+            move    y, z
+            int     1               ; set color
+            inc     y               ; next color
+            and     y, 0xF         ; keep color in range 0-15
+
+            move    x, z
+            int     9               ; print char
+            inc     x               ; next char
+            comp    x, 255         ; done?
+            jne     print_loop      ; repeat until a == 255
+
+            return
+.end

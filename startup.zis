@@ -1,0 +1,97 @@
+.origin 0x7000      ; ADDR_STARTUP in vm.c
+
+.db title           "zi5", 10, 0
+.db subtitle        "Virtual Retro Computer", 10, 10, 0
+.db ram             "RAM: ", 0
+.db palette         "Go-line palette by Zachie Photon", 10, 10, 0
+.db author          "zi5 Copyright (C) 2023 Thomas Foster", 0
+
+.start
+.procedure main
+        load    z, 0
+        int     11                  ; hide cursor
+
+        ; write title
+        lea     z, title
+        load    x, 0xA              ; blue
+        int     25                  ; write string/attr
+
+        ; underline
+        load    c, 22               ; line length
+        call    print_line
+
+        ; write subtitle
+        lea     z, subtitle
+        int     10
+
+        ; memory "check"
+        lea     z, ram
+        int     10                  ; print ram label
+        load    a, 0                ; current K
+        int     19                  ; get cursor -> x and y
+ram_loop:
+        move    a, z
+        int     18                  ; print integer
+        load    z, 75               ; 'K'
+        load    c, 1
+        int     9                   ; write char
+        inc     a                   ; next K
+        int     8                   ; restore cursor position
+        comp    a, 64
+        jle     ram_loop
+
+        load    y, 19
+        call    color_test
+        load    y, 20
+        call    color_test
+
+        load    c, 32               ; line length
+        call    print_line
+
+        lea     z, palette
+        load    x, 0xD
+        int     25
+        lea     z, author
+        int     10
+
+        load    z, 1000
+        int     20                  ; sleep 1 sec
+        load    z, 1
+        int     11                  ; restore cursor
+
+        return
+;
+; Cursor y position in Y
+;
+.procedure color_test
+        load    x, 0
+        int     8                   ; set cursor
+        load    x, 0                ; color
+clr_loop:
+        ; move    a, z
+        ; int     1                   ; set color
+        load    z, 219              ; block char
+        load    c, 2
+        int     12                  ; write char attr
+        inc     x                   ; next color
+        comp    x, 16               ; done?
+        jne     clr_loop
+
+        load    z, 10               ; newline char
+        load    c, 1
+        int     9                   ; write char
+        return
+;
+; Print a gray horizontal line and newline.
+; Line length in C.
+;
+.procedure print_line
+        load    x, 0x0D             ; attribute
+        load    z, 196              ; horizontal line char
+        int     12                  ; write char/attr
+        load    z, 10               ; newline char
+        load    c, 1                ; 1 character
+        int     9                   ; write char
+        return
+
+.end
