@@ -28,6 +28,7 @@
 #define CLOCK_SPEED_HZ 4770000L
 #define CYCLES_PER_INSTRUCTION 6 // TODO: ?
 #define STEP_TIME_NS (NSEC_PER_SEC / CLOCK_SPEED_HZ * CYCLES_PER_INSTRUCTION)
+
 #define TOTAL_MEMORY 0x10000 // 16K
 #define CALL_STACK_SIZE 1024
 #define VBUF_SIZE (SCREEN_W * SCREEN_H / 2) // 4 bits per pixel
@@ -186,15 +187,15 @@ void (* interrupts[])(void) = {
 };
 
 // System
-bool            running;
-bool            executing; // status flag?
-u16             regs[NUM_REGS];
-u8              mem[TOTAL_MEMORY];
-u16             call_stack[CALL_STACK_SIZE];
-int             call_stack_top = -1;
+bool    running;
+bool    executing; // status flag?
+u16     regs[NUM_REGS];
+u8      mem[TOTAL_MEMORY];
+u16     call_stack[CALL_STACK_SIZE];
+int     call_stack_top = -1;
 
 // Screen
-SDL_Window *    monitor; // Monitor, because 'window' is a console viewport.
+SDL_Window *    monitor; // 'monitor', because 'window' is a console viewport.
 SDL_Renderer *  renderer;
 u8              video_mode = VIDEO_MODE_TEXT_80_COL;
 u8              border_size = 16;
@@ -208,16 +209,16 @@ struct {
 
 // Input
 
-const u8 *      key_state;
-bool            wait_for_key;
+const u8 * key_state;
+bool wait_for_key;
 
 // Console
-u8              cursor_x;
-u8              cursor_y;
-bool            show_cursor = true;
-u8              blink;
-bool            wait_for_refresh;
-bool            character_display_sync = true;
+u8      cursor_x;
+u8      cursor_y;
+bool    show_cursor = true;
+u8      blink;
+bool    wait_for_refresh;
+bool    character_display_sync = true;
 
 SDL_Color pal[16] = {
     { 0x06, 0x06, 0x06 }, // 0 Black
@@ -244,6 +245,10 @@ extern u8 character_map[256 * 8];
 u8 * font = character_map;
 
 #pragma mark - DEBUG
+
+static double SecondsToNanoseconds(double seconds) {
+    return seconds * 1e9;
+}
 
 static const char * RegName(Reg r)
 {
@@ -294,10 +299,10 @@ void PrintMemoryRaw(int start, int end)
 
 #pragma mark -
 
-bool TextMode(void)
+bool IsTextMode(void)
 {
     return video_mode == VIDEO_MODE_TEXT_40_COL
-    || video_mode == VIDEO_MODE_TEXT_80_COL;
+        || video_mode == VIDEO_MODE_TEXT_80_COL;
 }
 
 /// Write character to console.
@@ -310,7 +315,7 @@ void WriteCharacter(int ch, int x, int y, const u8 * attr)
 {
     u16 * vbuf = (u16 *)&mem[ADDR_VBUF];
 
-    if ( TextMode() ) {
+    if ( IsTextMode() ) {
         if ( attr ) {
             vbuf[y * COLS + x] = ch | (*attr << 8);
         } else {
@@ -384,7 +389,7 @@ void ClearConsoleBuffer(void)
 
 void InterruptSetPixel(void)
 {
-    if ( !TextMode() ) {
+    if ( !IsTextMode() ) {
         SetPixel(regs[X], regs[Y], regs[Z]);
     }
 }
@@ -404,7 +409,7 @@ void InterruptSetMode(void)
 
     video_mode = new_mode;
 
-    if ( TextMode() ) {
+    if ( IsTextMode() ) {
         ClearConsoleBuffer();
     } else {
         memset(&mem[ADDR_VBUF], 0, VBUF_SIZE);
@@ -505,7 +510,7 @@ void InterruptWriteChar(void)
     u8 ch = regs[Z];
     u8 count = regs[C];
 
-    if ( TextMode() ) {
+    if ( IsTextMode() ) {
         switch ( ch ) {
             case '\n':
                 NewLine();
@@ -549,7 +554,7 @@ void InterruptWriteCharAttr(void)
     u8 attr = regs[X];
     u8 count = regs[C];
 
-    if ( TextMode() ) {
+    if ( IsTextMode() ) {
         for ( int i = 0; i < count; i++ ) {
             int x = cursor_x + count;
             if ( x == COLS ) {
@@ -1287,7 +1292,7 @@ void RenderScreen(void)
         .h = TEXTURE_H
     };
 
-    if ( TextMode() ) {
+    if ( IsTextMode() ) {
         src.w = COLS * FONT_W;
         src.h = 200;
         RefreshText();
@@ -1341,34 +1346,44 @@ void Run(StartupOptions options)
 
     // Init timing.
 
-    struct timespec last_nsec;
-    clock_gettime(CLOCK_MONOTONIC, &last_nsec);
-    printf("4.77 MHz time step: %ld ns\n", STEP_TIME_NS);
+    double instruction_hz = (double)CLOCK_SPEED_HZ / (double)CYCLES_PER_INSTRUCTION;
+    double frame_time = SecondsToNanoseconds(1.0 / instruction_hz);
+    printf("4.77 MHz instruction time: %lf ns\n", frame_time);
+
     int refresh_msec = 0;
     int input_msec = 0;
     int frame = 0;
 
+    u64 frequency = SDL_GetPerformanceFrequency();
+    u64 last = SDL_GetPerformanceCounter();
+    double cycle_length_sec = 1.0 / (instruction_hz);
+    printf("cycle len: %.50lf sec\n", cycle_length_sec);
+    printf("cycle len: %.50lf nsec\n", SecondsToNanoseconds(cycle_length_sec));
+
+    SDL_PumpEvents();
+
+    //double frame_lengths[100];
+
     while ( running ) {
+
+        u64 now = SDL_GetPerformanceCounter();
+        double dt = (double)(now - last) / (double)frequency;
+        if ( dt < cycle_length_sec ) {
+            continue;
+        }
+        last = now;
+
+        // DEBUG: check frame length
+#if 0
+        if ( frame <= 99 ) {
+            frame_lengths[frame] = dt * NSEC_PER_SEC;
+        } else {
+            running = false;
+        }
+#endif
 
         int now_msec = SDL_GetTicks();
         frame++;
-
-        // Limit speed.
-
-        struct timespec now_nsec;
-        clock_gettime(CLOCK_MONOTONIC, &now_nsec);
-
-        s64 elapsed_nsec = NanosecondDiff(&last_nsec, &now_nsec);
-//        printf("frame took %lld ns\n", elapsed_nsec);
-
-        s64 sleep_nsec = (s64)STEP_TIME_NS - elapsed_nsec;
-        if ( sleep_nsec > 0 ) {
-//            printf("frame %d: sleeping for %lld ns\n", frame, sleep_nsec);
-            struct timespec sleep_time;
-            sleep_time.tv_sec = sleep_nsec / NSEC_PER_SEC;
-            sleep_time.tv_nsec = sleep_nsec % NSEC_PER_SEC;
-            nanosleep(&sleep_time, NULL);
-        }
 
         if ( SDL_GetTicks() % 600 < 300 ) {
             blink = 0;
@@ -1405,20 +1420,14 @@ void Run(StartupOptions options)
         }
 
         if ( now_msec >= refresh_msec ) {
-            static int last_frame = 0;
-            last_frame = frame;
             wait_for_refresh = false;
             refresh_msec = now_msec + (1000 / 50);
             RenderScreen();
         }
-
-        last_nsec = now_nsec;
     }
 
-    SDL_FreeFormat(screen.format);
-    SDL_DestroyTexture(screen.scanlines);
-    SDL_DestroyTexture(screen.texture);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(monitor);
-    SDL_Quit();
+    // DEBUG:
+//    for ( int i = 0; i < 100; i++ ) {
+//        printf("frame %d: %lf ns\n", i, frame_lengths[i]);
+//    }
 }

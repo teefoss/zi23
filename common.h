@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <time.h>
 
 #define NSEC_PER_SEC 1000000000L
 #define CASE_RET_STR(enum_member) case enum_member: return #enum_member
@@ -35,6 +36,6 @@ char *  BitString(uint8_t n);
 void    FatalError(const char *format, ...);
 long    FileSize(FILE * file);
 void    PrintUsage(const char * program_name);
-s64     NanosecondDiff(struct timespec * before, struct timespec * after);
+s64     timespec_diff_ns(struct timespec start, struct timespec end);
 
 #endif /* common_h */

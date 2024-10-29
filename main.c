@@ -43,6 +43,12 @@ int main(int argc, char ** argv)
     _argc = argc;
     _argv = argv;
 
+    bool too_many_opcodes = NUM_OPCODES > MAX_OPCODES;
+    if ( too_many_opcodes ) {
+        fprintf(stderr, "Programmer added too many opcodes!\n");
+        return EXIT_FAILURE;
+    }
+
     char * file = GetOptionArg("-s");
     if ( file ) {
         Assemble(file);

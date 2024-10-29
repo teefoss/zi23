@@ -59,10 +59,16 @@ long FileSize(FILE * file)
     return end;
 }
 
-s64 NanosecondDiff(struct timespec * before, struct timespec * after)
+s64 timespec_diff_ns(struct timespec start, struct timespec end)
 {
-    s64 sec_diff = after->tv_sec - before->tv_sec;
-    s64 nsec_diff = after->tv_nsec - before->tv_nsec;
+    long diff_ns;
 
-    return sec_diff * NSEC_PER_SEC + nsec_diff;
+    if ( end.tv_nsec - start.tv_nsec < 0 ) {
+        diff_ns = 1000000000L + end.tv_nsec - start.tv_nsec;
+    } else {
+        diff_ns = end.tv_nsec - start.tv_nsec;
+    }
+
+    diff_ns += (end.tv_sec - start.tv_sec) * 1000000000L;
+    return diff_ns;
 }

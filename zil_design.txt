@@ -1,0 +1,28 @@
+
+types
+
+byte
+int
+string
+
+name: str
+age: int
+
+calculate: int (name: str, age: int) {
+    name: str = "Tom"
+    age: int = 41
+
+    return age
+}
+
+person: {
+    name: str
+    age: int
+    scores: [int]
+    ref: <int>
+}
+
+player: person
+player.name = "John"
+player.age = 5
+

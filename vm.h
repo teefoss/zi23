@@ -30,15 +30,23 @@
 // |       |     |     |
 // flags   r1    r0    opcode
 //
-#define OPCODE_MASK     0x1F        // 00000000 00111111
+#define OPCODE_MASK     0x3F        // 00000000 00111111
+#define MAX_OPCODES     (OPCODE_MASK + 1)
 #define REG0_MASK       0x1C0       // 00000001 11000000
 #define REG0_SHIFT      6
-#define REG1_MASK       0xE00        // 00001110 00000000
+#define REG1_MASK       0xE00       // 00001110 00000000
 #define REG1_SHIFT      9
-#define FLAG_A          (1 << 15)    // 10000000 00000000
-#define FLAG_B          (1 << 14)    // 01000000 00000000
-#define FLAG_C          (1 << 13)    // 00100000 00000000
-#define FLAG_D          (1 << 12)    // 00010000 00000000
+
+// Flags
+// - A indicates that the argument word is an immediate value.
+// - B specifies indirect mode: use the contents of the address in the argument.
+// - C specifies size to write or read: TODO: 0 = ?; 1 = ?
+// - D specifies the instruction is 'register to register'.
+
+#define FLAG_A          (1 << 15)   // 10000000 00000000
+#define FLAG_B          (1 << 14)   // 01000000 00000000
+#define FLAG_C          (1 << 13)   // 00100000 00000000
+#define FLAG_D          (1 << 12)   // 00010000 00000000
 #define FLAGS_MASK      (FLAG_A | FLAG_B | FLAG_C | FLAG_D)
 
 typedef enum {
@@ -65,6 +73,7 @@ typedef enum {
 
     /*
      *  STOP - terminate program
+     *  1 byte
      */
     OPCODE_STOP, // 1
 
@@ -74,43 +83,44 @@ typedef enum {
      *  4 bytes
      *
      *  opcode reg, address (or immediate value, if load)
-     *  opcode reg, s:(address)
+     *  opcode reg, size:(address)
      *
-     *  s = b or w
+     *  size = 'b' or 'w'
      *  A: immediate value (load only)
      *  | B: indirect mode
      *  | | C: write byte
      *  | | |
-     *  0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0
-     *  -------           --- -----------   ---------------------------------
-     *  |                 |   |             |
-     *  flags             r0  opcode      arg (immediate value or address)
+     *  0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 || 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0
+     *  -------       ------- -----------    ---------------------------------
+     *  |             |       |              |
+     *  flags         r0      opcode         arg (immediate value or address)
      */
     OPCODE_LOAD, // 2
     OPCODE_STORE, // 3
 
     /*
      *  LEA - load address of identifier into register
-     *  3 bytes
+     *  4 bytes
      *
      *  lea a, ident
+     *  TODO: load an immediate value?
      *
-     *  0 0 0 0 0 0 0 0 | 0 0 0 0 ...
-     *  --- -----------   -----------
-     *  |   |             |
-     *  r0  opcode        address
+     *  0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 || 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0
+     *                ------- -----------    ---------------------------------
+     *                |       |              |
+     *                r0      opcode         address
      */
     OPCODE_LEA, // 4
 
     /*
      *  PUSH - push register to stack
      *  POP - pop stack to register
-     *  1 byte
+     *  2 bytes
      *
-     *  0 0 0 0 0 0 0 0
-     *  --- -----------
-     *  |   |
-     *  r0  opcode
+     *  0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0
+     *                ------- -----------
+     *                |       |
+     *                r0      opcode
      */
     OPCODE_PUSH, // 5
     OPCODE_POP, // 6
@@ -128,11 +138,11 @@ typedef enum {
      *
      *  move a, x
      *
-     *              dst   src
+     *          dst   src
      *  0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0
-     *              ---   --- -----------
-     *              |     |   |
-     *              r1    r0  opcode
+     *          ----- ------- -----------
+     *          |     |       |
+     *          r1    r0      opcode
      */
     OPCODE_MOVE, // 9
 
@@ -140,25 +150,20 @@ typedef enum {
      *  AND, OR, XOR, SHR, SHL
      *  2 or 4 bytes
      *
-     *  opcode reg1,  reg2    2 bytes
-     *  opcode reg,   #imm    4 bytes
-     *  opcode reg,   addr    4 bytes
-     *  opcode reg,   (addr)  4 bytes
-     *
-     *  FLAG_A:    immediate value
-     *  FLAG_B:    indirect
-     *  FLAG_C:    byte at memory
-     *  FLAG_D:    reg to reg
+     *  opcode reg1, reg2    2 bytes
+     *  opcode reg,  #imm    4 bytes
+     *  opcode reg,  addr    4 bytes
+     *  opcode reg,  (addr)  4 bytes
      *
      *  A: immediate value
      *  | B: indirect mode
      *  | | C: byte at location
      *  | | | D: reg to reg
      *  | | | |
-     *  0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 0 0 ...
-     *  -------     ---   --- -----------   -----------
-     *  |           |     |   |             |
-     *  flags       r1    r0  opcode        arg
+     *  0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 || 0 0 0 0 ...
+     *  ------- ----- ------- -----------    -----------
+     *  |       |     |       |              |
+     *  flags   r1    r0      opcode         arg
      */
     OPCODE_AND, // 10
     OPCODE_OR, // 11
@@ -257,7 +262,7 @@ typedef enum {
     OPCODE_JPZ,     // JGE  if positive or zero / greater or equal than
 
     /*
-     *  LOOP - repeat while C > 0
+     *  LOOP - repeat while register C > 0
      *  4 bytes
      *
      *  loop ident
@@ -281,7 +286,7 @@ typedef enum {
 
 typedef struct {
     const char * program_file;
-    bool no_startup;
+    bool no_startup; // No 'loading' screen
     bool fullscreen;
     int border_size;
 } StartupOptions;
